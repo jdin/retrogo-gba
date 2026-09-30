@@ -35,7 +35,7 @@
 u8 *last_rom_translation_ptr = NULL;
 u8 *last_ram_translation_ptr = NULL;
 
-#if defined(MMAP_JIT_CACHE)
+#if defined(MMAP_JIT_CACHE) || defined(XTENSA_ARCH)   /* xtensa: allocated by the app (xjit) */
 u8* rom_translation_cache;
 u8* ram_translation_cache;
 u8 *rom_translation_ptr;
@@ -78,6 +78,10 @@ typedef struct
   u32 next_entry;
 } hashhdr_type;
 
+#if defined(XTENSA_ARCH) && defined(ESP_PLATFORM)
+#include "esp_attr.h"
+EXT_RAM_BSS_ATTR   /* 256 KB: PSRAM (internal RAM is short on the ESP32-S3) */
+#endif
 u32 rom_branch_hash[ROM_BRANCH_HASH_SIZE];
 
 typedef struct
@@ -215,7 +219,9 @@ typedef struct
   u32 offset = opcode & 0x07FF                                                \
 
 /* Include the right emitter headers */
-#if defined(MIPS_ARCH)
+#if defined(XTENSA_ARCH)
+  #include "xtensa/xtensa_emit.h"   /* esp32-emu-turbo */
+#elif defined(MIPS_ARCH)
   #include "mips/mips_emit.h"
 #elif defined(ARM_ARCH)
   #include "arm/arm_emit.h"
@@ -250,6 +256,8 @@ typedef struct
   void platform_cache_sync(void *baseaddr, void *endptr) {
     __clear_cache(baseaddr, endptr);
   }
+#elif defined(XTENSA_ARCH)
+  /* xtensa/xtensa_stub.c */
 #elif defined(MIPS_ARCH)
   void platform_cache_sync(void *baseaddr, void *endptr) {
     __builtin___clear_cache(baseaddr, endptr);
@@ -2547,8 +2555,21 @@ inline static ramtag_type* get_ram_tag(u16 tagval) {
   pc &= ~0x01                                                                 \
 
 
+/* GBAPROF: cycles spent translating (the dynarec's warm-up and new code) */
+#if defined(GBAPROF) && defined(XTENSA_ARCH)
+#include "esp_cpu.h"
+u32 xt_prof_translate_cycles, xt_prof_translate_blocks;
+#define TIMED_TRANSLATE(type, pc, ram)                                        \
+  ({ u32 c0_ = esp_cpu_get_cycle_count();                                     \
+     bool r_ = translate_block_##type(pc, ram);                               \
+     xt_prof_translate_cycles += esp_cpu_get_cycle_count() - c0_;             \
+     xt_prof_translate_blocks++; r_; })
+#else
+#define TIMED_TRANSLATE(type, pc, ram) translate_block_##type(pc, ram)
+#endif
+
 #define block_lookup_translate_builder(type)                                  \
-u8 function_cc *block_lookup_translate_##type(u32 pc)                         \
+XT_HOT u8 function_cc *block_lookup_translate_##type(u32 pc)                         \
 {                                                                             \
   u8 pcregion = (pc >> 24);                                                   \
   u16 *location;                                                              \
@@ -2578,7 +2599,7 @@ u8 function_cc *block_lookup_translate_##type(u32 pc)                         \
         bool result;                                                          \
         u8 *blkptr = ram_translation_ptr + block_prologue_size;               \
         trentry->offset_##type = blkptr - ram_translation_cache;              \
-        result = translate_block_##type(pc, true);                            \
+        result = TIMED_TRANSLATE(type, pc, true);                             \
                                                                               \
         if (result)                                                           \
           return blkptr;                                                      \
@@ -2618,7 +2639,7 @@ u8 function_cc *block_lookup_translate_##type(u32 pc)                         \
         *blk_offset_addr = (u32)(rom_translation_ptr - rom_translation_cache);\
         rom_translation_ptr += sizeof(hashhdr_type);                          \
         blkptr = rom_translation_ptr + block_prologue_size;                   \
-        result = translate_block_##type(pc, false);                           \
+        result = TIMED_TRANSLATE(type, pc, false);                            \
                                                                               \
         if (result)                                                           \
           return blkptr;                                                      \
@@ -2637,7 +2658,7 @@ u8 function_cc *block_lookup_translate_##type(u32 pc)                         \
 block_lookup_translate_builder(arm);
 block_lookup_translate_builder(thumb);
 
-u8 function_cc *block_lookup_address_dual(u32 pc)
+XT_HOT u8 function_cc *block_lookup_address_dual(u32 pc)
 {
   u32 thumb = pc & 0x01;
   if(thumb) {
@@ -2651,7 +2672,7 @@ u8 function_cc *block_lookup_address_dual(u32 pc)
   }
 }
 
-u8 function_cc *block_lookup_address_arm(u32 pc)
+XT_HOT u8 function_cc *block_lookup_address_arm(u32 pc)
 {
   unsigned i;
   for (i = 0; i < 4; i++) {
@@ -2667,7 +2688,7 @@ u8 function_cc *block_lookup_address_arm(u32 pc)
   return NULL;
 }
 
-u8 function_cc *block_lookup_address_thumb(u32 pc)
+XT_HOT u8 function_cc *block_lookup_address_thumb(u32 pc)
 {
   unsigned i;
   for (i = 0; i < 4; i++) {
@@ -3089,6 +3110,13 @@ bool translate_block_arm(u32 pc, bool ram_region)
   while(pc != block_end_pc)
   {
     block_data[block_data_position].block_offset = translation_ptr;
+#if defined(XTENSA_ARCH) && defined(RETRO_GO)
+    if (m4a_dynarec_head(pc))
+    {
+      generate_cycle_update();
+      xt_m4a_hook(pc);
+    }
+#endif
     arm_base_cycles();
 
     if (pc == cheat_master_hook)
@@ -3130,6 +3158,9 @@ bool translate_block_arm(u32 pc, bool ram_region)
   /* Unconditionally generate translation targets. In case we hit one or
      in the unlikely case that block was too big (and not finalized) */
   generate_translation_gate(arm);
+#ifdef XTENSA_ARCH
+  generate_block_cold();
+#endif
 
   for(i = 0; i < block_exit_position; i++)
   {
@@ -3156,6 +3187,11 @@ bool translate_block_arm(u32 pc, bool ram_region)
     }
   }
 
+#ifdef XTENSA_ARCH
+  /* Xtensa code is 2/3-byte instructions: the next block's header (u32
+     words, and a 32-bit store ignores the low address bits) must be aligned */
+  translation_ptr = (u8 *)(((uintptr_t)translation_ptr + 3) & ~(uintptr_t)3);
+#endif
   if (ram_region)
     ram_translation_ptr = translation_ptr;
   else
@@ -3287,6 +3323,9 @@ bool translate_block_thumb(u32 pc, bool ram_region)
   /* Unconditionally generate translation targets. In case we hit one or
      in the unlikely case that block was too big (and not finalized) */
   generate_translation_gate(thumb);
+#ifdef XTENSA_ARCH
+  generate_block_cold();
+#endif
 
   for(i = 0; i < block_exit_position; i++)
   {
@@ -3313,6 +3352,11 @@ bool translate_block_thumb(u32 pc, bool ram_region)
     }
   }
 
+#ifdef XTENSA_ARCH
+  /* Xtensa code is 2/3-byte instructions: the next block's header (u32
+     words, and a 32-bit store ignores the low address bits) must be aligned */
+  translation_ptr = (u8 *)(((uintptr_t)translation_ptr + 3) & ~(uintptr_t)3);
+#endif
   if (ram_region)
     ram_translation_ptr = translation_ptr;
   else
