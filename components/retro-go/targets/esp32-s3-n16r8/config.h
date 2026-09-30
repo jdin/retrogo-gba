@@ -100,6 +100,10 @@
     {RG_KEY_OPTION, .num = GPIO_NUM_8,  .pullup = 1, .level = 0},\
     {RG_KEY_A,      .num = GPIO_NUM_15, .pullup = 1, .level = 0},\
     {RG_KEY_B,      .num = GPIO_NUM_5,  .pullup = 1, .level = 0},\
+    {RG_KEY_X,      .num = GPIO_NUM_21, .pullup = 1, .level = 0},\
+    {RG_KEY_Y,      .num = GPIO_NUM_14, .pullup = 1, .level = 0},\
+    {RG_KEY_L,      .num = GPIO_NUM_1,  .pullup = 1, .level = 0},\
+    {RG_KEY_R,      .num = GPIO_NUM_2,  .pullup = 1, .level = 0},\
 }
 
 

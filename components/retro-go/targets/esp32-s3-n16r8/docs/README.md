@@ -61,12 +61,18 @@ esptool.py write_flash --flash_size detect 0x0 retro-go_*_esp32-s3-n16r8.img
 | I2S DATA     | 40   |
 | Status LED   | 38   |
 | A / B        | 15 / 5   |
+| X / Y        | 21 / 14  |
+| L / R        | 1 / 2    |
 | SELECT / START | 16 / 17 |
 | MENU / OPTION  | 18 / 8  |
 | D-Pad (ADC)  | ADC1 CH5 (up/down), ADC1 CH6 (left/right) |
 | Battery      | ADC1 CH3 |
 
 Buttons are active low with internal pull-ups.
+
+X/Y/L/R are only read by `snes9x` (all four) and `gbsp`/GBA (L and R only). Every other app
+uses the 10 button Odroid-GO layout and ignores them, so they may be left unpopulated if you
+do not care about SNES or GBA shoulder buttons.
 
 ## Display troubleshooting
 
