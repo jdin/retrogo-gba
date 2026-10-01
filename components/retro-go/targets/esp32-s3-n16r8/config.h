@@ -76,7 +76,7 @@
 #define RG_GPIO_LCD_MISO            GPIO_NUM_NC
 #define RG_GPIO_LCD_MOSI            GPIO_NUM_12
 #define RG_GPIO_LCD_CLK             GPIO_NUM_48
-#define RG_GPIO_LCD_CS              GPIO_NUM_NC
+#define RG_GPIO_LCD_CS              GPIO_NUM_45
 #define RG_GPIO_LCD_DC              GPIO_NUM_47
 #define RG_GPIO_LCD_BCKL            GPIO_NUM_39
 // #define RG_GPIO_LCD_BCKL_INVERT     // Uncomment if the LED is active LOW

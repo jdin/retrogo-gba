@@ -51,7 +51,7 @@ esptool.py write_flash --flash_size detect 0x0 retro-go_*_esp32-s3-n16r8.img
 | LCD DC       | 47   |
 | LCD RST      | 3    |
 | LCD BACKLIGHT| 39   |
-| LCD CS       | tied to GND (not driven) |
+| LCD CS       | 45   |
 | SD MISO      | 9    |
 | SD MOSI      | 11   |
 | SD SCLK      | 13   |
