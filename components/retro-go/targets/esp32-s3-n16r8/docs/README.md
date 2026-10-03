@@ -111,13 +111,35 @@ render 14.0 ms). The bottleneck is ARM emulation on core 0 plus the scanline ren
 Display (0.05 ms) and audio submission (0.06 ms) are negligible, so neither faster SPI nor a
 different display driver would help.
 
-Because the emulator runs below full speed in heavy scenes, it produces audio slower than the DAC
-consumes it and the I2S buffer starves, which is audible as distortion in the music. This is
-inherent to running under 60 fps; it is not clipping (it persists at 15% volume) and larger DMA
-buffers do not help (tested with `DMA_BUFFER_COUNT` 8, no change) because the shortfall is
-sustained rather than transient. Retro-Go's auto-frameskip cannot help either: `gbsp` draws every
-frame on purpose when the renderer is on core 1, and skipping would not reduce the ARM emulation
-cost that dominates anyway.
+### The GBA audio artifacts in heavy scenes
+
+`rg_audio_submit()` is what paces the gbsp emulation loop: it blocks until the I2S buffer has
+room, so submitting one frame's worth of samples yields 60 fps. Instrumenting every region of the
+loop shows wall time splitting cleanly:
+
+| Scene | cpu | render | submit blocking | fps |
+| ----- | --- | ------ | --------------- | --- |
+| calm      |  9-11 ms |  9-10 ms | 5-6 ms | 57-58 |
+| demanding | 20-28 ms | 13-24 ms | 0.2 ms | 33-46 |
+
+In demanding scenes core 0's ARM emulation alone exceeds the 16.7 ms budget, so the GBA genuinely
+runs in slow motion and produces audio slower than the DAC consumes it. The buffer drains and the
+gaps are heard as distortion. It is not clipping: it persists at 15% volume.
+
+**Three fixes were tried and all failed. Do not repeat them:**
+
+- *Larger DMA buffers* (`DMA_BUFFER_COUNT` 4 -> 8): no audible change. The shortfall is sustained,
+  not transient, so more buffering only delays the underrun.
+- *Adaptive DAC sample rate* (`rg_audio_set_sample_rate` tracking measured output): death spiral.
+  Lowering the rate makes `rg_audio_submit` block longer, which throttles the emulator, which
+  lowers the measured rate further. It pinned every scene to ~35 fps.
+- *Stretching the samples to fill the elapsed time*: the same feedback loop. Feeding more samples
+  than the game produces makes submit block longer and throttles the emulator, badly.
+
+The common trap is that **anything which changes how much audio is submitted, or how fast it
+drains, also changes the frame pacing**, because submit is the pacer. A correct fix would need
+negative feedback on the actual DMA fill level, which the `rg_audio` API does not expose. Short of
+that, the only real cure is making the emulation faster.
 
 ### Why `GBAJIT_IRAM=1` does not work here
 
