@@ -101,7 +101,30 @@ Relevant build flags (all off unless set):
 | `GBAJIT=1` | Use the dynarec instead of the interpreter |
 | `GBAPROF=1` | Print a per-second `GBAPROF` line with ms/frame per stage |
 | `GBABENCH=1` | Scripted deterministic benchmark, `GBABENCH` line every 300 frames |
-| `GBAJIT_IRAM=1` | Put the translation cache in internal RAM (usually not enough free) |
+| `GBAJIT_IRAM=1` | Put the translation cache in internal RAM. **Does not work on this board** (see below) |
+
+### Measured performance
+
+With `GBAJIT=1` and the 32KB instruction cache, Metroid: Zero Mission runs at **58 fps** in simple
+scenes (cpu 6.4 ms, render 6.0 ms) and drops to **46 fps** in demanding ones (cpu 20.2 ms,
+render 14.0 ms). The bottleneck is ARM emulation on core 0 plus the scanline renderer on core 1.
+Display (0.05 ms) and audio submission (0.06 ms) are negligible, so neither faster SPI nor a
+different display driver would help.
+
+Because the emulator runs below full speed in heavy scenes, it produces audio slower than the DAC
+consumes it and the I2S buffer starves, which is audible as distortion in the music. This is
+inherent to running under 60 fps; it is not clipping (it persists at 15% volume) and larger DMA
+buffers do not help (tested with `DMA_BUFFER_COUNT` 8, no change) because the shortfall is
+sustained rather than transient. Retro-Go's auto-frameskip cannot help either: `gbsp` draws every
+frame on purpose when the renderer is on core 1, and skipping would not reduce the ARM emulation
+cost that dominates anyway.
+
+### Why `GBAJIT_IRAM=1` does not work here
+
+It requires `CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n`, and even then only about 5KB of internal RAM is
+free for the translation cache. The dynarec thrashes and then executes garbage:
+`bad jump 8000242` followed by a `Guru Meditation Error: IllegalInstruction` with the PC inside
+IRAM. Leave this flag off.
 
 ### Why the instruction cache setting matters
 
