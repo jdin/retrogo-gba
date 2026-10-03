@@ -9,7 +9,10 @@
 #include "../components/gbsp-libretro/gba_cc_lut.h"
 
 #define AUDIO_SAMPLE_RATE (GBA_SOUND_FREQUENCY)
-#define AUDIO_BUFFER_LENGTH (AUDIO_SAMPLE_RATE / 60 + 1)
+/* One frame at 60 fps is AUDIO_SAMPLE_RATE/60. The buffer is sized for a much
+   slower frame so that a scene running at ~15 fps can still be padded to cover
+   the audio the DAC consumes in that time (see the submit site below). */
+#define AUDIO_BUFFER_LENGTH (AUDIO_SAMPLE_RATE / 15 + 1)
 
 u32 idle_loop_target_pc = 0xFFFFFFFF;
 u32 translation_gate_target_pc[MAX_TRANSLATION_GATES];
@@ -491,7 +494,7 @@ void app_main(void)
 
     RG_LOGI("emulation loop");
 
-    rg_audio_sample_t mixbuffer[AUDIO_BUFFER_LENGTH] = {0};
+    static rg_audio_sample_t mixbuffer[AUDIO_BUFFER_LENGTH];
 
     while (true)
     {
@@ -702,8 +705,46 @@ void app_main(void)
 
         rg_system_tick(rg_system_timer() - startTime);
 
-        rg_audio_submit(mixbuffer, frames_count);
-        // RG_TIMER_LAP("rg_audio_submit");
+        /* Keep the DAC fed without disturbing the frame pacing.
+
+           rg_audio_submit() blocks until the I2S buffer has room, and that is
+           what paces this loop. When the GBA runs in slow motion gpSP returns
+           fewer samples than the DAC consumes, the buffer drains, and the gaps
+           are heard as distortion. The cure is to stretch the samples we have,
+           but the amount matters: sizing them from the full loop period is
+           unstable, because that period contains the blocking time this very
+           decision causes (N = rate*T with T = work + N/rate has no solution,
+           so N runs away and the emulator is throttled to a crawl).
+
+           Sizing from the work time alone has no such feedback: at steady
+           state we emit rate*work samples every work seconds, which is exactly
+           the DAC's consumption. The small bias keeps the buffer leaning full
+           rather than empty, and any overshoot is absorbed harmlessly by
+           submit blocking (blocking does not feed back into the target).
+
+           The pitch drops with the frame rate, matching the slow-motion
+           emulation, but the stream never breaks. */
+        {
+            static int64_t work_start;
+            if (work_start)
+            {
+                size_t target = (size_t)((AUDIO_SAMPLE_RATE * (rg_system_timer() - work_start)) / 1000000);
+                target += target / 50;  /* +2%: lean full, not empty */
+                if (target > AUDIO_BUFFER_LENGTH)
+                    target = AUDIO_BUFFER_LENGTH;
+                if (frames_count > 0 && frames_count < target)
+                {
+                    for (size_t i = target; i-- > 0;)
+                        mixbuffer[i] = mixbuffer[i * frames_count / target];
+                    frames_count = target;
+                }
+            }
+
+            rg_audio_submit(mixbuffer, frames_count);
+
+            /* restart the clock after the blocking call, never across it */
+            work_start = rg_system_timer();
+        }
 
         /* with the lines drawn on core 1 a skipped frame saves core 0
            nothing: draw them all (retro-go's auto frameskip still raises
