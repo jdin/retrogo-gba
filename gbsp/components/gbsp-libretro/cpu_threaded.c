@@ -62,6 +62,11 @@ u32 iwram_code_max =  0U;
 u32 ewram_code_min = ~0U;
 u32 ewram_code_max =  0U;
 
+/* ROM cache flushes in all, and those translation did when it reached the
+   end of the cache, mid-frame (the app flushes it between frames before
+   that if it can, see ROM_FLUSH_SOFT) */
+u32 flush_rom_count, flush_rom_mid_frame;
+
 #define INITIAL_ROM_WATERMARK   16   // To avoid NULL aliasing
 u32 rom_cache_watermark = INITIAL_ROM_WATERMARK;
 
@@ -80,7 +85,7 @@ typedef struct
 
 #if defined(XTENSA_ARCH) && defined(ESP_PLATFORM)
 #include "esp_attr.h"
-EXT_RAM_BSS_ATTR   /* 256 KB: PSRAM (internal RAM is short on the ESP32-S3) */
+EXT_RAM_BSS_ATTR   /* 128 KB (4 << ROM_BRANCH_HASH_BITS): PSRAM (internal RAM is short on the ESP32-S3) */
 #endif
 u32 rom_branch_hash[ROM_BRANCH_HASH_SIZE];
 
@@ -2559,10 +2564,16 @@ inline static ramtag_type* get_ram_tag(u16 tagval) {
 #if defined(GBAPROF) && defined(XTENSA_ARCH)
 #include "esp_cpu.h"
 u32 xt_prof_translate_cycles, xt_prof_translate_blocks;
+/* Only the outermost call adds its time: translate_block_* translates a
+   block's exits recursively through block_lookup_translate_*, and timing
+   every level counted the nested work once per level (1.4-3.9x). */
+static u32 xt_prof_translate_depth;
 #define TIMED_TRANSLATE(type, pc, ram)                                        \
   ({ u32 c0_ = esp_cpu_get_cycle_count();                                     \
+     xt_prof_translate_depth++;                                               \
      bool r_ = translate_block_##type(pc, ram);                               \
-     xt_prof_translate_cycles += esp_cpu_get_cycle_count() - c0_;             \
+     if (--xt_prof_translate_depth == 0)                                      \
+       xt_prof_translate_cycles += esp_cpu_get_cycle_count() - c0_;           \
      xt_prof_translate_blocks++; r_; })
 #else
 #define TIMED_TRANSLATE(type, pc, ram) translate_block_##type(pc, ram)
@@ -3137,7 +3148,10 @@ bool translate_block_arm(u32 pc, bool ram_region)
       if (ram_region)
         flush_translation_cache_ram();
       else
+      {
+        flush_rom_mid_frame++;
         flush_translation_cache_rom();
+      }
       return false;
     }
 
@@ -3212,7 +3226,7 @@ bool translate_block_arm(u32 pc, bool ram_region)
   return true;
 }
 
-bool translate_block_thumb(u32 pc, bool ram_region)
+XT_HOT bool translate_block_thumb(u32 pc, bool ram_region)
 {
   u32 opcode = 0;
   u32 last_opcode;
@@ -3307,7 +3321,10 @@ bool translate_block_thumb(u32 pc, bool ram_region)
       if (ram_region)
         flush_translation_cache_ram();
       else
+      {
+        flush_rom_mid_frame++;
         flush_translation_cache_rom();
+      }
       return false;
     }
 
@@ -3427,6 +3444,7 @@ void flush_translation_cache_ram(void)
 
 void flush_translation_cache_rom(void)
 {
+  flush_rom_count++;
   /* We flush the generated code except for everything below the watermark. */
   last_rom_translation_ptr = &rom_translation_cache[rom_cache_watermark];
   rom_translation_ptr      = &rom_translation_cache[rom_cache_watermark];

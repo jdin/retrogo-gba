@@ -1519,6 +1519,9 @@ extern "C" void pchist_dump(int top)
 
 #ifdef RETRO_GO
 #include "m4a_hle.h"
+#ifdef GBAPROF
+extern "C" u32 gbaprof_m4a_kind(void) { return m4a_kind; }
+#endif
 #ifdef HAVE_DYNAREC
 /* the Xtensa dynarec runs the m4a mixer loop natively too (xtensa_stub.c):
    a translated instruction at a loop head calls m4a_dynarec_run first */

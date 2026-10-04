@@ -2453,11 +2453,13 @@ static void render_task(void *arg)
   }
 }
 
-/* retro-go's display task is 6 on core 1: below it the LCD DMA buffers are
-   refilled as soon as they free up (the bus stays busy); since the VRAM copy,
-   a late renderer rarely makes core 0 wait */
+/* retro-go's display task is 6 on core 1. Above it: the display scales and
+   sends a frame in ~11 ms of CPU, and below it the renderer fell up to ~35
+   lines behind meanwhile, which core 0 then waited for whenever the game
+   wrote VRAM mid-frame (Metroid Zero Mission: ~2.3 ms per frame in busy
+   scenes). The display only shows fewer of the frames drawn instead */
 #ifndef GBSP_RENDER_PRIO
-#define GBSP_RENDER_PRIO 5
+#define GBSP_RENDER_PRIO 7
 #endif
 /* core 0: start the line renderer on core 1 */
 extern "C" void gbsp_render_start(void)
@@ -2467,7 +2469,6 @@ extern "C" void gbsp_render_start(void)
   r_pal = (u16 (*)[512])heap_caps_malloc(R_PAL_N * 512 * sizeof(u16), MALLOC_CAP_SPIRAM);
   if (!rlines || !r_oam || !r_pal)
     abort();
-  /* above retro-go's display task (6) on core 1, so core 0 rarely waits */
   if (xTaskCreatePinnedToCore(render_task, "gba_render", 6144, NULL, GBSP_RENDER_PRIO, &rtask, 1) == pdPASS)
     gbsp_render_core1 = 1;
 }

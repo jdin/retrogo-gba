@@ -590,7 +590,9 @@ void application_show_file_menu(retro_file_t *file, bool advanced)
     char *sram_path = rg_emu_get_path(RG_PATH_SAVE_SRAM, rom_path);
     rg_emu_states_t *savestates = rg_emu_get_states(rom_path, 4);
     bool has_save = savestates->used > 0; // Don't rely on file->saves just yet
-    bool has_sram = rg_storage_exists(sram_path);
+    char sram_new_path[RG_PATH_MAX + 8];
+    snprintf(sram_new_path, sizeof(sram_new_path), "%s.new", sram_path); // gbsp and snes9x: a save in progress
+    bool has_sram = rg_storage_exists(sram_path) || rg_storage_exists(sram_new_path);
     bool is_fav = bookmark_exists(BOOK_TYPE_FAVORITE, file);
     int slot = -1;
 
@@ -628,6 +630,7 @@ void application_show_file_menu(retro_file_t *file, bool advanced)
         if (has_sram && rg_gui_confirm(_("Delete sram file?"), 0, 0))
         {
             remove(sram_path);
+            remove(sram_new_path);
         }
         break;
 

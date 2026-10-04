@@ -141,7 +141,7 @@ u8 *xto_extui(u8 *p, int a0, int a1, int a2, int a3);
 
 /* movi when the value fits 12 bits, else an inline literal:
    j over; [pad]; .word value; over: l32r ireg, value */
-static __attribute__((noinline)) u8 *xt_load_imm32(u8 *translation_ptr, int ireg, u32 value)
+static XT_HOT __attribute__((noinline)) u8 *xt_load_imm32(u8 *translation_ptr, int ireg, u32 value)
 {
   s32 v = (s32)value;
   if (v >= -2048 && v <= 2047)
@@ -166,7 +166,7 @@ static __attribute__((noinline)) u8 *xt_load_imm32(u8 *translation_ptr, int ireg
   translation_ptr = xt_load_imm32(translation_ptr, reg_##ireg, (u32)(imm))
 
 /* ireg = reg_pcbase + delta when close to the block's start PC */
-static __attribute__((noinline)) u8 *xt_load_pc(u8 *translation_ptr, int ireg, u32 new_pc, u32 stored_pc)
+static XT_HOT __attribute__((noinline)) u8 *xt_load_pc(u8 *translation_ptr, int ireg, u32 new_pc, u32 stored_pc)
 {
   s32 d = (s32)(new_pc - stored_pc);
   if (d >= -128 && d <= 127)
@@ -189,7 +189,7 @@ static inline int xt_host_of(u32 r)
 {
   return r == 0 ? XT_MAP_R0 : r == 1 ? XT_MAP_R1 : r == 2 ? XT_MAP_R2 : -1;
 }
-static __attribute__((noinline)) u8 *xt_load_reg(u8 *translation_ptr, int h, u32 r)
+static XT_HOT __attribute__((noinline)) u8 *xt_load_reg(u8 *translation_ptr, int h, u32 r)
 {
   int m = xt_host_of(r);
   if (m >= 0)
@@ -198,7 +198,7 @@ static __attribute__((noinline)) u8 *xt_load_reg(u8 *translation_ptr, int h, u32
     XT(l32i, h, reg_base, r * 4);
   return translation_ptr;
 }
-static __attribute__((noinline)) u8 *xt_store_reg(u8 *translation_ptr, int h, u32 r)
+static XT_HOT __attribute__((noinline)) u8 *xt_store_reg(u8 *translation_ptr, int h, u32 r)
 {
   int m = xt_host_of(r);
   if (m >= 0)
@@ -207,7 +207,7 @@ static __attribute__((noinline)) u8 *xt_store_reg(u8 *translation_ptr, int h, u3
     XT(s32i, h, reg_base, r * 4);
   return translation_ptr;
 }
-static __attribute__((noinline)) u8 *xt_store_reg_i32(u8 *translation_ptr, u32 imm, u32 r)
+static XT_HOT __attribute__((noinline)) u8 *xt_store_reg_i32(u8 *translation_ptr, u32 imm, u32 r)
 {
   int m = xt_host_of(r);
   if (m >= 0)
@@ -217,14 +217,14 @@ static __attribute__((noinline)) u8 *xt_store_reg_i32(u8 *translation_ptr, u32 i
   return translation_ptr;
 }
 /* reg[0..2] <-> a4/a6/a7 around C code that reads or writes them */
-static __attribute__((noinline)) u8 *xt_sync_to_mem(u8 *translation_ptr)
+static XT_HOT __attribute__((noinline)) u8 *xt_sync_to_mem(u8 *translation_ptr)
 {
   XT(s32i, XT_MAP_R0, reg_base, 0);
   XT(s32i, XT_MAP_R1, reg_base, 4);
   XT(s32i, XT_MAP_R2, reg_base, 8);
   return translation_ptr;
 }
-static __attribute__((noinline)) u8 *xt_sync_from_mem(u8 *translation_ptr)
+static XT_HOT __attribute__((noinline)) u8 *xt_sync_from_mem(u8 *translation_ptr)
 {
   XT(l32i, XT_MAP_R0, reg_base, 0);
   XT(l32i, XT_MAP_R1, reg_base, 4);
@@ -246,7 +246,7 @@ static __attribute__((noinline)) u8 *xt_sync_from_mem(u8 *translation_ptr)
   XT(mov, reg_##ireg_dest, reg_##ireg_src)
 
 /* ireg += imm (any 32-bit value) */
-static __attribute__((noinline)) u8 *xt_add_imm(u8 *translation_ptr, int ireg, u32 imm)
+static XT_HOT __attribute__((noinline)) u8 *xt_add_imm(u8 *translation_ptr, int ireg, u32 imm)
 {
   s32 v = (s32)imm;
   if (v == 0)
@@ -318,7 +318,7 @@ static __attribute__((noinline)) u8 *xt_add_imm(u8 *translation_ptr, int ireg, u
   translation_ptr = xt_load_imm32_force(translation_ptr, XT_CALLREG, 0);      \
   XT(jx, XT_CALLREG)
 
-static __attribute__((noinline)) u8 *xt_load_imm32_force(u8 *translation_ptr, int ireg, u32 value)
+static XT_HOT __attribute__((noinline)) u8 *xt_load_imm32_force(u8 *translation_ptr, int ireg, u32 value)
 {
   u8 *j = translation_ptr;
   u32 lit = ((uintptr_t)(j + 3) + 3) & ~3u;
@@ -395,7 +395,7 @@ static inline void xt_fwd_b8(u8 *at, u8 *target)
 #define xt_store_flag(hreg, regnum) XT(s32i, hreg, reg_base, (regnum) * 4)
 
 /* N and Z from a result */
-static __attribute__((noinline)) u8 *xt_nz_flags(u8 *translation_ptr, int res, u32 flag_status)
+static XT_HOT __attribute__((noinline)) u8 *xt_nz_flags(u8 *translation_ptr, int res, u32 flag_status)
 {
   if (check_generate_z_flag)
   {
@@ -414,7 +414,7 @@ static __attribute__((noinline)) u8 *xt_nz_flags(u8 *translation_ptr, int res, u
   translation_ptr = xt_nz_flags(translation_ptr, reg_##res, flag_status)
 
 /* res = a + b (+ carry-in held in cin, or -1 for none): C and V as x86 add/adc */
-static __attribute__((noinline)) u8 *xt_add_op(u8 *translation_ptr, int res, int a, int b, int cin, u32 flag_status)
+static XT_HOT __attribute__((noinline)) u8 *xt_add_op(u8 *translation_ptr, int res, int a, int b, int cin, u32 flag_status)
 {
   /* res may alias a */
   if (!check_generate_c_flag && !check_generate_v_flag)
@@ -453,7 +453,7 @@ static __attribute__((noinline)) u8 *xt_add_op(u8 *translation_ptr, int res, int
 
 /* res = a - b (- borrow-in held in bin as 0/1, or -1 for none):
    ARM C = not borrow, V as x86 sub/sbb */
-static __attribute__((noinline)) u8 *xt_sub_op(u8 *translation_ptr, int res, int a, int b, int bin, u32 flag_status)
+static XT_HOT __attribute__((noinline)) u8 *xt_sub_op(u8 *translation_ptr, int res, int a, int b, int bin, u32 flag_status)
 {
   if (!check_generate_c_flag && !check_generate_v_flag)
   {
@@ -500,7 +500,7 @@ typedef struct { u8 *hot; u32 target_pc; u32 kind; } xt_cold_t;
 extern xt_cold_t xt_cold[XT_COLD_MAX];
 extern int xt_cold_n;
 
-static __attribute__((noinline)) u8 *xt_emit_cold(u8 *translation_ptr, u32 stored_pc)
+static XT_HOT __attribute__((noinline)) u8 *xt_emit_cold(u8 *translation_ptr, u32 stored_pc)
 {
   for (int i = 0; i < xt_cold_n; i++)
   {

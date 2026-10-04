@@ -13,6 +13,14 @@ typedef rg_audio_frame_t rg_audio_sample_t;
 
 typedef struct
 {
+    int64_t totalSamples;
+    int64_t busyTime;
+    int64_t fullWaits; // Submissions that had to wait for the driver's buffer to drain (0 if unknown)
+    int64_t underruns; // Times the driver ran out of audio to play (0 if unknown)
+} rg_audio_counters_t;
+
+typedef struct
+{
     const char *name;                                             // Required
     bool (*init)(int device, int sample_rate);                    // Required
     bool (*deinit)(void);                                         // Required
@@ -21,6 +29,7 @@ typedef struct
     bool (*set_volume)(int percent);                              // Optional
     bool (*set_sample_rate)(int sample_rate);                     // Optional
     const char *(*get_error)(void);                               // Optional
+    void (*get_counters)(rg_audio_counters_t *counters);          // Optional, sets fullWaits and underruns
 } rg_audio_driver_t;
 
 typedef struct
@@ -29,12 +38,6 @@ typedef struct
     int device;
     const char *name;
 } rg_audio_sink_t;
-
-typedef struct
-{
-    int64_t totalSamples;
-    int64_t busyTime;
-} rg_audio_counters_t;
 
 void rg_audio_init(int sample_rate);
 void rg_audio_deinit(void);

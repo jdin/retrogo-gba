@@ -53,7 +53,7 @@ xt_cold_t xt_cold[XT_COLD_MAX];   /* the block being translated (xt_emit_cold) *
 int xt_cold_n;
 
 /* the out-of-line emitters behind XT() (xtensa_emit.h) */
-u8 *xto_retw(u8 *p)
+XT_HOT u8 *xto_retw(u8 *p)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -62,7 +62,7 @@ u8 *xto_retw(u8 *p)
   return p + e.pos;
 }
 
-u8 *xto_callx8(u8 *p, int a0)
+XT_HOT u8 *xto_callx8(u8 *p, int a0)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -71,7 +71,7 @@ u8 *xto_callx8(u8 *p, int a0)
   return p + e.pos;
 }
 
-u8 *xto_jx(u8 *p, int a0)
+XT_HOT u8 *xto_jx(u8 *p, int a0)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -80,7 +80,7 @@ u8 *xto_jx(u8 *p, int a0)
   return p + e.pos;
 }
 
-u8 *xto_ssl(u8 *p, int a0)
+XT_HOT u8 *xto_ssl(u8 *p, int a0)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -89,7 +89,7 @@ u8 *xto_ssl(u8 *p, int a0)
   return p + e.pos;
 }
 
-u8 *xto_ssr(u8 *p, int a0)
+XT_HOT u8 *xto_ssr(u8 *p, int a0)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -98,7 +98,7 @@ u8 *xto_ssr(u8 *p, int a0)
   return p + e.pos;
 }
 
-u8 *xto_ssai(u8 *p, int a0)
+XT_HOT u8 *xto_ssai(u8 *p, int a0)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -107,7 +107,7 @@ u8 *xto_ssai(u8 *p, int a0)
   return p + e.pos;
 }
 
-u8 *xto_j(u8 *p, int a0)
+XT_HOT u8 *xto_j(u8 *p, int a0)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -116,7 +116,7 @@ u8 *xto_j(u8 *p, int a0)
   return p + e.pos;
 }
 
-u8 *xto_mov(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_mov(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -127,7 +127,7 @@ u8 *xto_mov(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_movi(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_movi(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -139,7 +139,7 @@ u8 *xto_movi(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_nsau(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_nsau(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -148,7 +148,7 @@ u8 *xto_nsau(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_beqz(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_beqz(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -157,7 +157,7 @@ u8 *xto_beqz(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_bnez(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_bnez(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -166,7 +166,7 @@ u8 *xto_bnez(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_bgez(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_bgez(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -175,7 +175,7 @@ u8 *xto_bgez(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_l32r(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_l32r(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -184,7 +184,7 @@ u8 *xto_l32r(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_entry(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_entry(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -193,7 +193,7 @@ u8 *xto_entry(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_sll(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_sll(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -202,7 +202,7 @@ u8 *xto_sll(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_srl(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_srl(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -211,7 +211,7 @@ u8 *xto_srl(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_sra(u8 *p, int a0, int a1)
+XT_HOT u8 *xto_sra(u8 *p, int a0, int a1)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -220,7 +220,7 @@ u8 *xto_sra(u8 *p, int a0, int a1)
   return p + e.pos;
 }
 
-u8 *xto_add(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_add(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -229,7 +229,7 @@ u8 *xto_add(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_addi(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_addi(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -243,7 +243,7 @@ u8 *xto_addi(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_addmi(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_addmi(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -252,7 +252,7 @@ u8 *xto_addmi(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_and(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_and(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -261,7 +261,7 @@ u8 *xto_and(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_l32i(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_l32i(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -273,7 +273,7 @@ u8 *xto_l32i(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_s32i(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_s32i(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -285,7 +285,7 @@ u8 *xto_s32i(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_mull(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_mull(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -294,7 +294,7 @@ u8 *xto_mull(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_mulsh(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_mulsh(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -303,7 +303,7 @@ u8 *xto_mulsh(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_muluh(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_muluh(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -312,7 +312,7 @@ u8 *xto_muluh(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_or(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_or(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -321,7 +321,7 @@ u8 *xto_or(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_saltu(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_saltu(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -330,7 +330,7 @@ u8 *xto_saltu(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_slli(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_slli(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -339,7 +339,7 @@ u8 *xto_slli(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_srai(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_srai(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -348,7 +348,7 @@ u8 *xto_srai(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_src(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_src(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -357,7 +357,7 @@ u8 *xto_src(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_srli(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_srli(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -366,7 +366,7 @@ u8 *xto_srli(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_sub(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_sub(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -375,7 +375,7 @@ u8 *xto_sub(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_xor(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_xor(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -384,7 +384,7 @@ u8 *xto_xor(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_bltui(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_bltui(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -393,7 +393,7 @@ u8 *xto_bltui(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_bgeui(u8 *p, int a0, int a1, int a2)
+XT_HOT u8 *xto_bgeui(u8 *p, int a0, int a1, int a2)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);
@@ -402,7 +402,7 @@ u8 *xto_bgeui(u8 *p, int a0, int a1, int a2)
   return p + e.pos;
 }
 
-u8 *xto_extui(u8 *p, int a0, int a1, int a2, int a3)
+XT_HOT u8 *xto_extui(u8 *p, int a0, int a1, int a2, int a3)
 {
   xj_emit_t e;
   xj_init(&e, p, 16);

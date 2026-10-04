@@ -350,9 +350,7 @@ void S9xEndScreenRefresh(void)
       GFX.Pitch = GFX.Pitch2 = GFX.RealPitch;
       GFX.PPL = GFX.PPLx2 >> 1;
    }
-
-   if (CPU.SRAMModified)
-      CPU.SRAMModified = false;
+   /* CPU.SRAMModified stays set: the frontend saves the SRAM from it (main_snes.c) */
 }
 
 static INLINE void SelectTileRenderer(bool normal)

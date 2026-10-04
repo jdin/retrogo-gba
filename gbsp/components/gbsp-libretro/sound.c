@@ -135,7 +135,11 @@ XT_HOT unsigned sound_timer(fixed8_24 frequency_step, u32 channel)
   }
 
   ds->buffer_index = buffer_index;
-  ds->fifo_fractional = fp8_24_fractional_part(fifo_fractional);
+  /* one FIFO sample consumed: keep the carry. A DS rate above
+     GBA_SOUND_FREQUENCY (step > 1.0) must skip output samples on some ticks;
+     masking to the fractional part made every tick write one, so the channel
+     ran ahead of the PSG channels and wrapped the ring */
+  ds->fifo_fractional = fifo_fractional - 0x1000000;
 
   if(((ds->fifo_top - ds->fifo_base) % 32) <= 16)
   {
@@ -719,6 +723,15 @@ bool sound_read_savestate(const u8 *src)
       return false;
   }
 
+  /* The ring holds this session's samples, not the state's. Its indices are
+     used unchecked: keep them inside (and on a stereo pair) even when the
+     state was saved by a build with a larger BUFFER_SIZE */
+  memset(sound_buffer, 0, sizeof(sound_buffer));
+  sound_buffer_base &= BUFFER_SIZE_MASK & ~1u;
+  gbc_sound_buffer_index &= BUFFER_SIZE_MASK & ~1u;
+  for (i = 0; i < 2; i++)
+    direct_sound_channel[i].buffer_index &= BUFFER_SIZE_MASK & ~1u;
+
   return true;
 }
 
@@ -826,6 +839,13 @@ u32 sound_read_samples(s16 *out, u32 frames)
          current_sample = -2048;
 
       out[i] = current_sample * 16;
+   }
+   else
+   for(i = 0; i < samples_to_read; i++)
+   {
+      /* silence, and free the slots for when the sound is enabled again */
+      sound_buffer[(sound_buffer_base + i) & BUFFER_SIZE_MASK] = 0;
+      out[i] = 0;
    }
 
    sound_buffer_base += samples_to_read;

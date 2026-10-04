@@ -144,6 +144,10 @@ void rg_audio_submit(const rg_audio_frame_t *frames, size_t count)
     if (ACQUIRE_DEVICE(0))
     {
         audio.driver->submit(frames, count);
+        if (audio.driver->get_counters)
+            audio.driver->get_counters(&counters);
+        else // A driver switched to may lack them: report them unknown, not frozen
+            counters.fullWaits = counters.underruns = 0;
         RELEASE_DEVICE();
     }
 

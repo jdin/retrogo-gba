@@ -89,6 +89,7 @@ static RTC_NOINIT_ATTR time_t rtcValue;
 static bool panicTraceCleared = false;
 static bool exitCalled = false;
 static int overclockLevel, overclockMhz;
+static double overclockFactor = 1.0; // Measured CPU speed / 240 MHz, see rg_system_set_overclock()
 static uint32_t indicators;
 static rg_color_t ledColor = -1;
 static rg_stats_t statistics;
@@ -204,7 +205,12 @@ static void update_statistics(void)
 
     if (counters.ticks && previous.ticks)
     {
+    #if CONFIG_IDF_TARGET_ESP32
+        // The ESP32's timer runs from the APB clock, which the overclock moves (the S3's runs from the crystal)
         const float usPerSecond = 1000000.f * (overclockMhz ? overclockMhz / 240.f : 1.f);
+    #else
+        const float usPerSecond = 1000000.f;
+    #endif
         float totalTime = counters.updateTime - previous.updateTime;
         float totalTimeSecs = totalTime / usPerSecond;
         float busyTime = counters.busyTime - previous.busyTime;
@@ -1142,6 +1148,24 @@ int rg_system_get_log_level(void)
     return app.logLevel;
 }
 
+// The sample rate the app asked for times the Speed option, corrected for the overclock where it moves
+// the clock of the audio device so that the device still plays at that rate
+void rg_system_update_audio_sample_rate(void)
+{
+    double rate = app.sampleRate * app.speed;
+#if CONFIG_IDF_TARGET_ESP32
+    // The external DAC uses the APLL, an independent clock source, no need to correct.
+    if (strcmp(rg_audio_get_sink()->name, "Ext DAC") != 0)
+        rate /= overclockFactor;
+#elif CONFIG_IDF_TARGET_ESP32S3
+    // The I2S clock (the legacy driver always takes PLL_F160M) moves with the PLL. The dummy driver is paced by the
+    // timer, which runs from the crystal here.
+    if (strcmp(rg_audio_get_sink()->name, "Dummy") != 0)
+        rate /= overclockFactor;
+#endif
+    rg_audio_set_sample_rate((int)(rate + 0.5));
+}
+
 void rg_system_set_app_speed(float speed)
 {
     float newSpeed = RG_MIN(2.5f, RG_MAX(0.5f, speed));
@@ -1153,7 +1177,7 @@ void rg_system_set_app_speed(float speed)
     app.speed = newSpeed;
     // There's a bug in esp-idf v4.4.8 where many frequencies play at the wrong speed.
     // Still trying to find how to work around that...
-    rg_audio_set_sample_rate(app.sampleRate * newSpeed);
+    rg_system_update_audio_sample_rate();
     rg_system_event(RG_EVENT_SPEEDUP, NULL);
 }
 
@@ -1200,29 +1224,51 @@ void rg_system_set_overclock(int level)
     rom_i2c_writeReg(I2C_BBPLL, I2C_BBPLL_HOSTID, I2C_BBPLL_OC_DIV_7_0, div7_0);
     rg_task_delay(20);
 
+#if CONFIG_IDF_TARGET_ESP32
     // RTC clock isn't affected by the CPU or APB clocks, so it remains our only reliable time measurement
     uint64_t t = esp_rtc_get_time_us(); // The - 10000 is to account for time wasted on mutexes
     uint32_t cc = xthal_get_ccount(); // Obtain it *after* calling esp_rtc_get_time_us because it is slow
     rg_usleep(100000);
-    int real_mhz = (double)(xthal_get_ccount() - cc) / (esp_rtc_get_time_us() - t);
-    // float factor = 240.f / real_mhz;
+    double real_mhz = (double)(xthal_get_ccount() - cc) / (esp_rtc_get_time_us() - t);
+#else
+    // The S3's timer runs from the crystal, more precise than the RTC clock (the cycle count
+    // is the calling core's: the caller must not migrate, as the apps' main tasks are pinned).
+    // Each pair is read with interrupts off, so that nothing runs between the two reads.
+    static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
+    portENTER_CRITICAL(&lock);
+    int64_t t = esp_timer_get_time();
+    uint32_t cc = xthal_get_ccount();
+    portEXIT_CRITICAL(&lock);
+    rg_usleep(100000);
+    portENTER_CRITICAL(&lock);
+    int64_t t2 = esp_timer_get_time();
+    uint32_t cc2 = xthal_get_ccount();
+    portEXIT_CRITICAL(&lock);
+    double real_mhz = (double)(cc2 - cc) / (t2 - t);
+#endif
+    // Level 0 puts the PLL back as it was: exactly 1, not a measurement a few ppm off
+    overclockFactor = level ? real_mhz / 240.0 : 1.0;
 
+    // Most audio devices rely on either the APB or the PLL clocks, which we've just skewed. So we have to
+    // compensate (see rg_system_update_audio_sample_rate()).
+    rg_system_update_audio_sample_rate();
 #if CONFIG_IDF_TARGET_ESP32
-    // Most audio devices rely on either the APB or the CPU clocks, which we've just skewed. So we have to
-    // compensate. The external DAC uses the APLL which is an independant clock source, no need to correct.
-    if (strcmp(rg_audio_get_sink()->name, "Ext DAC") != 0)
-        rg_audio_set_sample_rate(app.sampleRate * (240.0 / real_mhz));
-    uart_set_baudrate(0, 115200.0 * (240.0 / real_mhz));
+    // The ESP32's UART runs from the APB clock. The S3's console UART runs from the crystal, leave it alone.
+#ifdef CONFIG_ESP_CONSOLE_UART_BAUDRATE
+    uart_set_baudrate(0, CONFIG_ESP_CONSOLE_UART_BAUDRATE / overclockFactor);
+#else
+    uart_set_baudrate(0, 115200.0 / overclockFactor);
+#endif
+#endif
     // esp_timer_impl_update_apb_freq(80.0 / 240.0 * real_mhz);
     // ets_update_cpu_frequency(real_mhz);
-#endif
 
     app.frameskip = 1;
 
     overclockLevel = level;
-    overclockMhz = real_mhz;
+    overclockMhz = (int)(real_mhz + 0.5);
 
-    RG_LOGW("Overclock level %d applied: %dMhz", level, real_mhz);
+    RG_LOGW("Overclock level %d applied: %.2fMhz", level, real_mhz);
 #else
     RG_LOGE("Overclock not supported on this platform!");
 #endif

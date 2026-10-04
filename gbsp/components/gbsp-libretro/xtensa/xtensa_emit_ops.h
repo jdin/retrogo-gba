@@ -112,7 +112,7 @@
 /* ---- shifts ------------------------------------------------------------------ */
 
 /* r >>= s (logical), s 1..31 */
-static __attribute__((noinline)) u8 *xt_srl_imm(u8 *translation_ptr, int r, int s)
+static XT_HOT __attribute__((noinline)) u8 *xt_srl_imm(u8 *translation_ptr, int r, int s)
 {
   if (s <= 15)
     XT(srli, r, r, s);
@@ -235,7 +235,7 @@ static __attribute__((noinline)) u8 *xt_srl_imm(u8 *translation_ptr, int r, int 
    shift uses the amount's low 5 bits, the >= 32 cases are then fixed up
    exactly as the x86 code does (LSL/LSR by 32 give C = 0 there). Result in
    a0, then copied to ireg. */
-static __attribute__((noinline)) u8 *xt_shift_reg(u8 *translation_ptr, int kind, bool flags)
+static XT_HOT __attribute__((noinline)) u8 *xt_shift_reg(u8 *translation_ptr, int kind, bool flags)
 {
   u8 *zero = NULL, *small = NULL, *big = NULL, *end = NULL;
   const int v = reg_a0, s = reg_a1;
@@ -964,7 +964,7 @@ enum { XOP_NONE = -1, XOP_ADD, XOP_SUB, XOP_AND, XOP_EOR, XOP_ORR, XOP_CMP, XOP_
 #define XT_RN_reg 0
 #define XT_RN_imm 1
 
-static __attribute__((noinline)) u8 *xt_thumb_alu(u8 *translation_ptr, int op, int rd, u32 rs,
+static XT_HOT __attribute__((noinline)) u8 *xt_thumb_alu(u8 *translation_ptr, int op, int rd, u32 rs,
                                                   int rn_imm, u32 rn, u32 flag_status)
 {
   int a, b = -1, res, m;
