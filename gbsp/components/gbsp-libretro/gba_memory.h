@@ -320,6 +320,11 @@ extern u32 eeprom_size;
 
 extern u8 gamepak_backup[1024 * 128];
 
+/* in-game saves (see gba_memory.c) */
+extern u32 backup_dirty;
+extern u32 backup_save_size;
+void backup_loaded(u32 size);
+
 // Page sticky bit routines
 extern u32 gamepak_sticky_bit[1024/32];
 static inline void touch_gamepak_page(u32 physical_index)

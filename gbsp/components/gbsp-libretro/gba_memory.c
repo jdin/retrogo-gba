@@ -379,6 +379,16 @@ u32 gamepak_sticky_bit[1024/32];
 // a lot.
 FILE *gamepak_file_large = NULL;
 
+#ifdef RETRO_GO
+#include <esp_heap_caps.h>
+/* stdio's default buffer is 128 bytes (CONFIG_FATFS_VFS_FSTAT_BLKSIZE 0):
+   a 32 KB page was read as 256 read() calls and one SD command per sector,
+   the PSRAM page not being a DMA destination. Through this buffer (internal,
+   DMA capable) a page is four multi-sector reads */
+#define GAMEPAK_IOBUF_SIZE 8192
+static void *gamepak_iobuf;
+#endif
+
 // Writes to these respective locations should trigger an update
 // so the related subsystem may react to it.
 
@@ -393,6 +403,42 @@ u32 flash_bank_num;  // 0 or 1
 u32 flash_bank_cnt;
 
 u32 flash_device_id = FLASH_DEVICE_MACRONIX_64KB;
+
+/* In-game saves: bumped at every change of the backup data, which the
+   frontend then writes to the card (at least backup_save_size bytes) */
+u32 backup_dirty = 0;
+u32 backup_save_size = 0;
+
+static inline void backup_changed(u32 size)
+{
+  backup_dirty++;
+  if (backup_save_size < size)
+    backup_save_size = size;
+}
+
+#define FLASH_SAVE_SIZE (flash_bank_cnt == FLASH_SIZE_128KB ? 0x20000 : 0x10000)
+
+/* the frontend read a save of size bytes into gamepak_backup (after
+   load_gamepak): it is written back at that size at least */
+void backup_loaded(u32 size)
+{
+  u32 i = 0x10000;
+
+  backup_save_size = size;
+  /* data in the second 64 KB is the large flash chip, which a game missing
+     from the database would not see: it asks for the chip ID before reading.
+     Other emulators write 128 KB for every save, mostly 0xFF */
+  if((size == 0x20000) && (backup_type_reset != BACKUP_EEPROM))
+  {
+    while((i < 0x20000) && (gamepak_backup[i] == 0xFF))
+      i++;
+    if(i < 0x20000)
+    {
+      flash_device_id = FLASH_DEVICE_MACRONIX_128KB;
+      flash_bank_cnt = FLASH_SIZE_128KB;
+    }
+  }
+}
 
 void reload_timing_info()
 {
@@ -536,6 +582,8 @@ void function_cc write_eeprom(u32 unused_address, u32 value)
         {
           eeprom_mode = EEPROM_WRITE_MODE;
           memset(gamepak_backup + eeprom_address, 0, 8);
+          /* the block's 64 bits follow, in the same DMA */
+          backup_changed(eeprom_size * 0x200);
         }
       }
       break;
@@ -1112,6 +1160,7 @@ void function_cc write_backup(u32 address, u32 value)
           if(flash_mode == FLASH_ERASE_MODE)
           {
             memset(gamepak_backup, 0xFF, 1024 * 128);
+            backup_changed(FLASH_SAVE_SIZE);
             flash_mode = FLASH_BASE_MODE;
           }
           break;
@@ -1121,8 +1170,11 @@ void function_cc write_backup(u32 address, u32 value)
       }
       flash_command_position = 0;
     }
-    if(backup_type == BACKUP_SRAM)
+    if((backup_type == BACKUP_SRAM) && (gamepak_backup[0x5555] != value))
+    {
       gamepak_backup[0x5555] = value;
+      backup_changed(0x8000);
+    }
   }
   else
 
@@ -1137,6 +1189,7 @@ void function_cc write_backup(u32 address, u32 value)
       // Erase sector
       u32 fulladdr = (address & 0xF000) + 64*1024*flash_bank_num;
       memset(&gamepak_backup[fulladdr], 0xFF, 1024 * 4);
+      backup_changed(FLASH_SAVE_SIZE);
       flash_mode = FLASH_BASE_MODE;
       flash_command_position = 0;
     }
@@ -1155,15 +1208,20 @@ void function_cc write_backup(u32 address, u32 value)
     {
       // Write value to flash ROM
       u32 fulladdr = address + 64*1024*flash_bank_num;
-      gamepak_backup[fulladdr] = value;
+      if(gamepak_backup[fulladdr] != value)
+      {
+        gamepak_backup[fulladdr] = value;
+        backup_changed(FLASH_SAVE_SIZE);
+      }
       flash_mode = FLASH_BASE_MODE;
     }
     else
 
-    if(backup_type == BACKUP_SRAM)
+    if((backup_type == BACKUP_SRAM) && (gamepak_backup[address] != value))
     {
       // Write value to SRAM
       gamepak_backup[address] = value;
+      backup_changed(address < 0x8000 ? 0x8000 : 0x10000);
     }
   }
 }
@@ -2440,6 +2498,10 @@ void memory_term(void)
     fclose(gamepak_file_large);
     gamepak_file_large = NULL;
   }
+#ifdef RETRO_GO
+  heap_caps_free(gamepak_iobuf);
+  gamepak_iobuf = NULL;
+#endif
 
   while (gamepak_buffer_count)
   {
@@ -2633,6 +2695,13 @@ static s32 load_gamepak_raw(const char *name)
   gamepak_file_large = fopen(name, "rb");
   if(gamepak_file_large)
   {
+#ifdef RETRO_GO
+    /* before any I/O on the stream; without the memory it keeps the default */
+    if (!gamepak_iobuf)
+      gamepak_iobuf = heap_caps_malloc(GAMEPAK_IOBUF_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (gamepak_iobuf)
+      setvbuf(gamepak_file_large, gamepak_iobuf, _IOFBF, GAMEPAK_IOBUF_SIZE);
+#endif
     // Round size to 32KB pages
     fseek(gamepak_file_large, 0, SEEK_END);
     gamepak_size = (u32)ftell(gamepak_file_large);

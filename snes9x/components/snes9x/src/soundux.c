@@ -27,7 +27,7 @@ static struct {
    int32_t EchoBuffer [MIX_BUFFER_SIZE];
    int32_t FilterTaps [8];
    uint32_t FilterTapDefinitionBitfield;
-   /* In the above, bit I is set if FilterTaps[I] is non-zero. */
+   /* In the above, bit I is set if FilterTaps[I] is non-zero (bit 0: if it is not 127). */
    uint32_t Z;
    int32_t Loop [16];
 
@@ -300,7 +300,9 @@ void S9xFixSoundAfterSnapshotLoad()
 void S9xSetFilterCoefficient(int32_t tap, int8_t value)
 {
    FilterTaps [tap & 7] = value;
-   if (value == 0 || (tap == 0 && value == 127))
+   /* Bitfield 0 is the unfiltered path, which passes the echo at unity: C0 is the one tap that is set unless it is
+    * 127, so that all eight at 0 filter to silence as on the DSP */
+   if ((tap & 7) ? value == 0 : value == 127)
       FilterTapDefinitionBitfield &= ~(1 << (tap & 7));
    else
       FilterTapDefinitionBitfield |= 1 << (tap & 7);
@@ -787,7 +789,9 @@ void S9xMixSamples(int16_t* buffer, int32_t sample_count)
             for (J = 0; J < sample_count; J++)
             {
                int32_t E = Echo [SoundData.echo_ptr];
-               Echo[SoundData.echo_ptr++] = (E * SoundData.echo_feedback) / 128 + EchoBuffer [J];
+               int32_t F = (E * SoundData.echo_feedback) / 128 + EchoBuffer [J];
+               CLIP16(F); /* the DSP's echo buffer is 16-bit: unclamped, the feedback builds up and distorts */
+               Echo[SoundData.echo_ptr++] = F;
 
                if (SoundData.echo_ptr >= SoundData.echo_buffer_size)
                   SoundData.echo_ptr = 0;
@@ -813,9 +817,12 @@ void S9xMixSamples(int16_t* buffer, int32_t sample_count)
                if (FilterTapDefinitionBitfield & 0x40) E += Loop [(Z - 12) & 15] * FilterTaps [6];
                if (FilterTapDefinitionBitfield & 0x80) E += Loop [(Z - 14) & 15] * FilterTaps [7];
                E /= 128;
+               CLIP16(E); /* as the DSP's FIR output */
                Z++;
 
-               Echo[SoundData.echo_ptr++] = (E * SoundData.echo_feedback) / 128 + EchoBuffer[J];
+               int32_t F = (E * SoundData.echo_feedback) / 128 + EchoBuffer[J];
+               CLIP16(F); /* the DSP's echo buffer is 16-bit: unclamped, the feedback builds up and distorts */
+               Echo[SoundData.echo_ptr++] = F;
 
                if (SoundData.echo_ptr >= SoundData.echo_buffer_size)
                   SoundData.echo_ptr = 0;

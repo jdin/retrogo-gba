@@ -1503,7 +1503,10 @@ static rg_gui_event_t audio_update_cb(rg_gui_option_t *option, rg_gui_event_t ev
         sink = min;
 
     if (sink != prev_sink)
+    {
         rg_audio_set_sink(sinks[sink].driver->name, sinks[sink].device);
+        rg_system_update_audio_sample_rate(); // The overclock correction depends on the sink
+    }
 
     strcpy(option->value, sinks[sink].name);
 

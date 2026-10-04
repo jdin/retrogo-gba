@@ -120,6 +120,10 @@ void init_main(void)
 #endif
 }
 
+#ifdef GBAPROF
+u32 gbaprof_halt_cycles;   /* read and reset by gbsp/main/main.c */
+#endif
+
 XT_HOT u32 function_cc update_gba(int remaining_cycles)
 {
   u32 changed_pc = 0;
@@ -296,6 +300,11 @@ XT_HOT u32 function_cc update_gba(int remaining_cycles)
            timer[i].count < execute_cycles)
           execute_cycles = timer[i].count;
     }
+#ifdef GBAPROF
+    /* the next pass skips these cycles: the CPU waits for an interrupt */
+    if (reg[CPU_HALT_STATE] != CPU_ACTIVE && reg[CPU_HALT_STATE] != CPU_DMA && !frame_complete)
+      gbaprof_halt_cycles += execute_cycles;
+#endif
   } while(reg[CPU_HALT_STATE] != CPU_ACTIVE && !frame_complete);
 
   // We voluntarily limit this. It is not accurate but it would be much harder.

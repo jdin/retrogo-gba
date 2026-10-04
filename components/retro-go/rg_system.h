@@ -234,6 +234,7 @@ rg_stats_t rg_system_get_stats(void);
 
 // Speed and Overclock
 void rg_system_set_app_speed(float speed);
+void rg_system_update_audio_sample_rate(void);
 float rg_system_get_app_speed(void);
 void rg_system_set_overclock(int level);
 int rg_system_get_overclock(void);

@@ -9,6 +9,8 @@
 #error "Your chip has no DAC! Please set RG_AUDIO_USE_INT_DAC to 0 in your target file."
 #endif
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <driver/gpio.h>
 #include <driver/i2s.h>
 
@@ -20,23 +22,40 @@
 #define MUTE_DISABLE 1
 #endif
 
-// We can safely assume that no application will submit more than 640 audio frames per call to
-// driver_submit (32000/50). Using a single large buffer risks blocking the call needlessly because
-// some apps submit more than once per cycle or there could be occasional jitter (early submission).
-#define DMA_BUFFER_COUNT 4
-#define DMA_BUFFER_LEN 180
+// Most applications submit at most 640 audio frames per call to driver_submit (32000/50); gbsp
+// stretches a slow frame's audio to up to a few thousand, and a submit larger than the ring simply
+// blocks until the DMA has played the rest. Using a single large buffer risks blocking the call
+// needlessly because some apps submit more than once per cycle or there could be occasional jitter
+// (early submission). An app whose frame time varies a lot can ask for more lead with
+// RG_AUDIO_DMA_BUFFER_COUNT.
+#ifndef RG_AUDIO_DMA_BUFFER_COUNT
+#define RG_AUDIO_DMA_BUFFER_COUNT 4
+#endif
+#define DMA_BUFFER_COUNT RG_AUDIO_DMA_BUFFER_COUNT
+#define DMA_BUFFER_LEN 180 // gbsp/main/main.c's AUDIO_DMA_BUFFER_LEN must match
+// The driver posts an event per DMA buffer played, ~3 per 60 Hz frame. 32 hold more than the whole
+// ring's worth between two submissions, so an underrun event isn't dropped for lack of space
+#define EVENT_QUEUE_LEN 32
 
 static struct {
     const char *last_error;
     int device;
     int volume;
     bool muted;
+    QueueHandle_t events;
+    int64_t full_waits; // Never reset, the caller compares them between submissions
+    int64_t underruns;
+    size_t tail; // Frames written into the DMA buffer being filled, 0 at a buffer boundary
 } state;
+
+static const rg_audio_frame_t silence[DMA_BUFFER_LEN];
 
 static bool driver_init(int device, int sample_rate)
 {
     state.last_error = NULL;
     state.device = device;
+    state.events = NULL;
+    state.tail = 0;
 
     if (state.device == 0)
     {
@@ -50,7 +69,7 @@ static bool driver_init(int device, int sample_rate)
             .intr_alloc_flags = 0, // ESP_INTR_FLAG_LEVEL1
             .dma_buf_count = DMA_BUFFER_COUNT,
             .dma_buf_len = DMA_BUFFER_LEN,
-        }, 0, NULL);
+        }, EVENT_QUEUE_LEN, &state.events);
         if (ret == ESP_OK)
             ret = i2s_set_dac_mode(RG_AUDIO_USE_INT_DAC);
         if (ret != ESP_OK)
@@ -71,10 +90,11 @@ static bool driver_init(int device, int sample_rate)
             .intr_alloc_flags = 0, // ESP_INTR_FLAG_LEVEL1
             .dma_buf_count = DMA_BUFFER_COUNT,
             .dma_buf_len = DMA_BUFFER_LEN,
+            .tx_desc_auto_clear = true, // On underrun play silence, not the stale buffers in a loop
         #if CONFIG_IDF_TARGET_ESP32
             .use_apll = true, // External DAC may care about accuracy
         #endif
-        }, 0, NULL);
+        }, EVENT_QUEUE_LEN, &state.events);
         if (ret == ESP_OK)
         {
             ret = i2s_set_pin(I2S_NUM_0, &(i2s_pin_config_t) {
@@ -101,12 +121,16 @@ static bool driver_init(int device, int sample_rate)
 
 static bool driver_set_sample_rates(int sampleRate)
 {
-    return i2s_set_sample_rates(I2S_NUM_0, sampleRate) == ESP_OK;
+    if (i2s_set_sample_rates(I2S_NUM_0, sampleRate) != ESP_OK)
+        return false;
+    state.tail = 0; // It restarts the DMA, and the next write takes a fresh buffer
+    return true;
 }
 
 static bool driver_deinit(void)
 {
-    i2s_driver_uninstall(I2S_NUM_0);
+    i2s_driver_uninstall(I2S_NUM_0); // Also deletes the event queue
+    state.events = NULL;
     if (state.device == 0)
     {
     #if RG_AUDIO_USE_INT_DAC
@@ -127,12 +151,39 @@ static bool driver_deinit(void)
     return true;
 }
 
+// TX_Q_OVF: the DMA finished a buffer while no other one had been filled, the audio ran out
+static bool driver_take_underruns(void)
+{
+    bool ran_out = false;
+    i2s_event_t event;
+    while (state.events && xQueueReceive(state.events, &event, 0) == pdTRUE)
+    {
+        if (event.type == I2S_EVENT_TX_Q_OVF)
+        {
+            state.underruns++;
+            ran_out = true;
+        }
+    }
+    return ran_out;
+}
+
 static bool driver_submit(const rg_audio_frame_t *frames, size_t count)
 {
     float volume = state.muted ? 0.f : (state.volume * 0.01f);
     bool use_internal_dac = state.device == 0;
     rg_audio_frame_t buffer[DMA_BUFFER_LEN];
+    bool waited = false;
     size_t pos = 0;
+
+    // Ran out since the last submission: the DMA has played the buffer being filled as far as it was written, and
+    // cleared it. Its rest is no longer next in the ring, what went there would play out of order, a lap later, or be
+    // overwritten. Finish it with silence (never blocks, it is free): the audio resumes in a fresh buffer, in order
+    if (driver_take_underruns() && state.tail)
+    {
+        size_t written = 0;
+        i2s_write(I2S_NUM_0, silence, (DMA_BUFFER_LEN - state.tail) * 4, &written, 0);
+        state.tail = (state.tail + written / 4) % DMA_BUFFER_LEN;
+    }
 
     for (size_t i = 0; i < count; ++i)
     {
@@ -176,19 +227,45 @@ static bool driver_submit(const rg_audio_frame_t *frames, size_t count)
         buffer[pos].left = left;
         buffer[pos].right = right;
 
-        if (i == count - 1 || ++pos == RG_COUNT(buffer))
+        // Advance pos first: the last frame must be counted before the final write
+        if (++pos == RG_COUNT(buffer) || i == count - 1)
         {
-            size_t written;
-            if (i2s_write(I2S_NUM_0, (void *)buffer, pos * 4, &written, 1000) != ESP_OK)
-                RG_LOGW("I2S Submission error! Written: %d/%d\n", written, pos * 4);
+            size_t written = 0, more = 0;
+            // Try without a timeout first: a short write means that every DMA buffer was full
+            esp_err_t ret = i2s_write(I2S_NUM_0, (void *)buffer, pos * 4, &written, 0);
+            if (ret == ESP_OK && written < pos * 4)
+            {
+                waited = true;
+                ret = i2s_write(I2S_NUM_0, (char *)buffer + written, pos * 4 - written, &more, 1000);
+                written += more;
+            }
+            // The legacy driver returns ESP_OK on timeout, so check the length too
+            if (ret != ESP_OK || written != pos * 4)
+                RG_LOGW("I2S Submission error! Written: %d/%d\n", (int)written, (int)(pos * 4));
+            state.tail = (state.tail + written / 4) % DMA_BUFFER_LEN;
             pos = 0;
         }
     }
+    if (waited)
+        state.full_waits++;
+
+    // Counted now too: the caller sees at once that the ring ran out during this submission. Its writes came after
+    // that and are in order, nothing to finish (unless it ran out in the few us before the first one)
+    driver_take_underruns();
     return true;
 }
 
 static bool driver_set_mute(bool mute)
 {
+    if (mute && state.tail)
+    {
+        // Finish the buffer being written with silence: the first submit after the menu then
+        // starts a fresh one, so an app that refills the ring then knows how much it holds.
+        // Never blocks, the rest of that buffer is free.
+        size_t written = 0;
+        i2s_write(I2S_NUM_0, silence, (DMA_BUFFER_LEN - state.tail) * 4, &written, 0);
+        state.tail = (state.tail + written / 4) % DMA_BUFFER_LEN;
+    }
     i2s_zero_dma_buffer(I2S_NUM_0);
     #ifdef RG_GPIO_SND_AMP_ENABLE
     gpio_set_level(RG_GPIO_SND_AMP_ENABLE, mute ? MUTE_ENABLE : MUTE_DISABLE);
@@ -208,6 +285,12 @@ static const char *driver_get_error(void)
     return state.last_error;
 }
 
+static void driver_get_counters(rg_audio_counters_t *counters)
+{
+    counters->fullWaits = state.full_waits;
+    counters->underruns = state.underruns;
+}
+
 const rg_audio_driver_t rg_audio_driver_i2s = {
     .name = "i2s",
     .init = driver_init,
@@ -217,6 +300,7 @@ const rg_audio_driver_t rg_audio_driver_i2s = {
     .set_volume = driver_set_volume,
     .set_sample_rate = driver_set_sample_rates,
     .get_error = driver_get_error,
+    .get_counters = driver_get_counters,
 };
 
 #endif // RG_AUDIO_USE_INT_DAC || RG_AUDIO_USE_EXT_DAC
