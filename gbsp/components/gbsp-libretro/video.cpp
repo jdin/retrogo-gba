@@ -1043,8 +1043,9 @@ static const u8 obj_dim_table[3][4][2] = {
   { {8, 16}, {8, 32}, {16, 32}, {32, 64} }
 };
 
-#if defined(XTENSA_ARCH) && defined(ESP_PLATFORM)
-/* 100 KB: PSRAM, the dynarec needs the internal RAM (IWRAM, IRAM code) */
+#if defined(ESP_PLATFORM)
+/* 100 KB: PSRAM, the internal RAM can't hold it (the dynarec needs it for
+   IWRAM and IRAM code, and the ESP32 doesn't have 100 KB to spare) */
 static EXT_RAM_BSS_ATTR u8 obj_priority_list[5][160][128];
 #else
 static u8 obj_priority_list[5][160][128];
